@@ -127,7 +127,7 @@ public class ImageProcessor {
                 posX = Collections.max(posXSet);
                 posY = Collections.max(posYSet);
             }
-            return new Pixel(posX, posY, 0);
+            return new Pixel(posX, posY, this.marker);
         }
 
     }
