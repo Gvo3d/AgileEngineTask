@@ -9,13 +9,13 @@ import java.util.*;
 import java.util.List;
 
 public class ImageProcessor {
-    IntComparator comparator = new IntComparator();
-    ArrayList<Pixel> diffirences = new ArrayList<>();
-    int diffirenceMarker = 0;
-    BufferedImage firstImage;
-    BufferedImage secondImage;
-    File resultFile = null;
-    String imageType = "png";
+    private IntComparator comparator = new IntComparator();
+    private BufferedImage firstImage;
+    private BufferedImage secondImage;
+    private File resultFile = null;
+    private int[][] differenceField;
+    private String imageType = "png";
+    private static final int OFFSET = 5;
 
 
     public void compareImages(File firstImageFile, File secondImageFile, File outputFile) {
@@ -24,6 +24,7 @@ public class ImageProcessor {
             secondImage = ImageIO.read(secondImageFile);
             String[] nameData = firstImageFile.getName().split("\\.");
             imageType = nameData[nameData.length - 1];
+            differenceField = new int[firstImage.getWidth()][firstImage.getHeight()];
             resultFile = outputFile;
             processImages();
         } catch (IOException e) {
@@ -36,53 +37,41 @@ public class ImageProcessor {
         BufferedImage result = new BufferedImage(firstImage.getWidth() > secondImage.getWidth() ? firstImage.getWidth() : secondImage.getWidth(), firstImage.getHeight() > secondImage.getHeight() ? firstImage.getHeight() : secondImage.getHeight(), imageType);
         result.setData(firstImage.getData());
 
-//        DataBuffer firstImageData = firstImage.getRaster().getDataBuffer();
-//        DataBuffer secondImageData = secondImage.getRaster().getDataBuffer();
         for (int x = 0; x < firstImage.getWidth(); x++) {
             for (int y = 0; y < firstImage.getHeight(); y++) {
                 if (comparator.compare(firstImage.getRGB(x, y), secondImage.getRGB(x, y)) != 0) {
-                    diffirences.add(new Pixel(x, y, 0));
+                    differenceField[x][y] = -1;
                 }
             }
-        }
-        for (Pixel diffirence : diffirences) {
-            diffirence.field = getSurroundField(diffirence.posX, diffirence.posY);
-        }
-        diffirenceMarker = 1;
-        List<DiffirenceRectangle> diffirenceFields = new ArrayList<>();
-        for (int i = 0; i < diffirenceMarker; i++) {
-            DiffirenceRectangle rectangle = new DiffirenceRectangle(i);
-            ListIterator<Pixel> iterator = diffirences.listIterator();
-            while (iterator.hasNext()) {
-                Pixel pixel = iterator.next();
-                if (rectangle.marker == pixel.field) {
-                    rectangle.addPixel(pixel);
-                    iterator.remove();
-                }
-            }
-            diffirenceFields.add(rectangle);
         }
 
-        for (DiffirenceRectangle rectangle : diffirenceFields) {
+        List<DifferenceRectangle> rectangles = new ArrayList<>();
+        int differenceMarker = 1;
+        for (int i = 0; i < firstImage.getWidth(); i++) {
+            for (int j = 0; j < firstImage.getHeight(); j++) {
+                if (differenceField[i][j] == -1) {
+                    DifferenceRectangle rectangle = new DifferenceRectangle(differenceMarker++);
+                    differenceField[i][j] = rectangle.marker;
+                    rectangle.addPixel(i, j);
+                    rectangles.add(rectangle);
+                    markSurroundedRecursively(i, j, rectangle);
+                }
+            }
+        }
+
+        for (DifferenceRectangle rectangle : rectangles) {
             Pixel leftPixel = rectangle.getBoundPixel(true);
             Pixel rightPixel = rectangle.getBoundPixel(false);
-
-            System.out.println("LEFT: " + leftPixel);
-            System.out.println("RIGHT: " + rightPixel);
-
             Graphics2D graph = result.createGraphics();
             graph.setColor(Color.RED);
             Rectangle markedRectangle = new Rectangle();
-            markedRectangle.x = leftPixel.getPosX();
-            markedRectangle.y = leftPixel.getPosY();
-            markedRectangle.height = rightPixel.getPosY() - leftPixel.getPosY();
-            markedRectangle.width = rightPixel.getPosX() - leftPixel.getPosX();
+            markedRectangle.x = leftPixel.getPosX() - 2;
+            markedRectangle.y = leftPixel.getPosY() - 2;
+            markedRectangle.height = (rightPixel.getPosY() - leftPixel.getPosY()) + 3;
+            markedRectangle.width = (rightPixel.getPosX() - leftPixel.getPosX()) + 3;
             graph.draw(markedRectangle);
-            graph.fill(markedRectangle);
             graph.dispose();
         }
-
-        System.out.println("3");
 
         try {
             ImageIO.write(result, this.imageType, resultFile);
@@ -91,31 +80,34 @@ public class ImageProcessor {
         }
     }
 
-    private int getSurroundField(int posX, int posY) {
-            for (int i = posX-1; i<=posX+1; i++){
-                for (int j= posY-1; j<=posY; j++){
-                    if (i!=posX && j!=posY) {
-                       for (Pixel pixel: diffirences){
-                           if (i==pixel.posX && j==pixel.posY){
-                               return pixel.field;
-                           }
-                       }
-                    }
+
+    private void markSurroundedRecursively(int posX, int posY, DifferenceRectangle rectangle) {
+        int minX = (posX - OFFSET)<0?0:posX-OFFSET;
+        int minY = (posY - OFFSET)<0?0:posY-OFFSET;
+        int maxX = (posX + OFFSET)>firstImage.getWidth()-1?firstImage.getWidth():posX + OFFSET;
+        int maxY = (posY + OFFSET)>firstImage.getHeight()-1?firstImage.getHeight():posY + OFFSET;
+
+        for (int i = minX; i < maxX; i++) {
+            for (int j = minY; j < maxY; j++) {
+                if (differenceField[i][j] != 0 && differenceField[i][j] != rectangle.marker) {
+                    differenceField[i][j] = rectangle.marker;
+                    rectangle.addPixel(i, j);
+                    markSurroundedRecursively(i, j, rectangle);
                 }
             }
-        return diffirenceMarker++;
+        }
     }
 
-    private class DiffirenceRectangle {
+    private class DifferenceRectangle {
         private ArrayList<Pixel> pixels = new ArrayList<>();
         private int marker;
 
-        public DiffirenceRectangle(int marker) {
+        DifferenceRectangle(int marker) {
             this.marker = marker;
         }
 
-        public void addPixel(Pixel pixel) {
-            this.pixels.add(pixel);
+        void addPixel(int posX, int posY) {
+            this.pixels.add(new Pixel(posX, posY, this.marker));
         }
 
         Pixel getBoundPixel(boolean leftUpper) {
@@ -128,14 +120,14 @@ public class ImageProcessor {
             int posX;
             int posY;
 
-            if (leftUpper){
+            if (leftUpper) {
                 posX = Collections.min(posXSet);
                 posY = Collections.min(posYSet);
             } else {
                 posX = Collections.max(posXSet);
                 posY = Collections.max(posYSet);
             }
-            return new Pixel(posX,posY,0);
+            return new Pixel(posX, posY, 0);
         }
 
     }
@@ -145,27 +137,18 @@ public class ImageProcessor {
         private int posY;
         private int field;
 
-        public Pixel(int posX, int posY, int field) {
+        Pixel(int posX, int posY, int field) {
             this.posX = posX;
             this.posY = posY;
             this.field = field;
         }
 
-        public int getPosX() {
+        int getPosX() {
             return posX;
         }
 
-        public int getPosY() {
+        int getPosY() {
             return posY;
-        }
-
-        @Override
-        public String toString() {
-            return "Pixel{" +
-                    "posX=" + posX +
-                    ", posY=" + posY +
-                    ", field=" + field +
-                    '}';
         }
     }
 
