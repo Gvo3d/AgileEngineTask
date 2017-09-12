@@ -1,8 +1,14 @@
 package org.yakimovdenis;
 
+import org.yakimovdenis.ImageProcessor.ImageProcessor;
+
+import java.io.File;
+
 public class Main {
 
     public static void main(String[] args) {
-	// write your code here
+        ImageProcessor processor = new ImageProcessor();
+        File file = new File("c:\\image.png");
+        processor.getImage(file);
     }
 }
